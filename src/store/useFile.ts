@@ -28,6 +28,7 @@ interface JsonActions {
   setError: (error: string | null) => void;
   setHasChanges: (hasChanges: boolean) => void;
   setContents: (data: SetContents) => void;
+  updateNodeValue: (path: (string | number)[], newValue: any) => void;
   fetchUrl: (url: string) => void;
   setFormat: (format: FileFormat) => void;
   clear: () => void;
@@ -129,6 +130,48 @@ const useFile = create<FileStates & JsonActions>()((set, get) => ({
   },
   setError: error => set({ error }),
   setHasChanges: hasChanges => set({ hasChanges }),
+  updateNodeValue: async (path, newValue) => {
+    try {
+      const currentContents = get().contents;
+      const json = await contentToJson(currentContents, get().format);
+      
+      // Navigate to the path and update the value
+      let target = json;
+      for (let i = 0; i < path.length - 1; i++) {
+        target = target[path[i]];
+      }
+      
+      // Parse the new value appropriately
+      let parsedValue = newValue;
+      if (typeof newValue === 'string') {
+        // Handle special cases
+        if (newValue === 'null') {
+          parsedValue = null;
+        } else if (newValue === 'true') {
+          parsedValue = true;
+        } else if (newValue === 'false') {
+          parsedValue = false;
+        } else if (/^-?\d+$/.test(newValue)) {
+          // Integer
+          parsedValue = parseInt(newValue, 10);
+        } else if (/^-?\d*\.\d+$/.test(newValue)) {
+          // Float
+          parsedValue = parseFloat(newValue);
+        } else {
+          // Keep as string, but remove quotes if they exist and were added by user
+          parsedValue = newValue.replace(/^"(.*)"$/, '$1');
+        }
+      }
+      
+      target[path[path.length - 1]] = parsedValue;
+      
+      const updatedContents = await jsonToContent(JSON.stringify(json, null, 2), get().format);
+      get().setContents({ contents: updatedContents, hasChanges: true });
+    } catch (error) {
+      console.error("Error updating node value:", error);
+      toast.error("Failed to update node value");
+    }
+  },
   fetchUrl: async url => {
     try {
       const res = await fetch(url);
